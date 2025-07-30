@@ -18,30 +18,36 @@ export const generateImageFromPrompt = async (prompt: string): Promise<string> =
   }
 
   try {
-    // Use 'imagen-3.0-generate-002' for image generation
-    const response = await ai.models.generateImages({
-        model: 'imagen-3.0-generate-002',
-        prompt: prompt,
-        config: { 
-          numberOfImages: 1, 
-          outputMimeType: 'image/jpeg' // Request JPEG for broad compatibility and good quality
-        },
+    // Use the correct method for image generation with Gemini 2.0 Flash
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash-exp',
+      contents: prompt,
+      config: {
+        responseModalities: ['Text', 'Image']
+      }
     });
 
-    if (response.generatedImages && response.generatedImages.length > 0 && response.generatedImages[0].image?.imageBytes) {
-      const base64ImageBytes = response.generatedImages[0].image.imageBytes;
-      // The API returns a raw base64 string. We need to prepend the data URL scheme.
-      // The outputMimeType requested was 'image/jpeg'.
-      return `data:image/jpeg;base64,${base64ImageBytes}`;
-    } else {
-      console.error("Unexpected API response structure:", response);
-      throw new Error("No image data received from API or unexpected response structure.");
+    // Process the response to find the image data
+    if (response.candidates && response.candidates.length > 0) {
+      const candidate = response.candidates[0];
+      if (candidate.content && candidate.content.parts) {
+        for (const part of candidate.content.parts) {
+          if (part.inlineData && part.inlineData.data) {
+            // The API returns a raw base64 string. We need to prepend the data URL scheme.
+            const mimeType = part.inlineData.mimeType || 'image/jpeg';
+            return `data:${mimeType};base64,${part.inlineData.data}`;
+          }
+        }
+      }
     }
+    
+    console.error("Unexpected API response structure:", response);
+    throw new Error("No image data received from API or unexpected response structure.");
   } catch (error) {
     console.error("Error generating image via Gemini API:", error);
     if (error instanceof Error) {
       // Check for specific Gemini API error messages if available, or re-throw generic one
-      if (error.message.includes("API key not valid")) {
+      if (error.message.includes("API key not valid") || error.message.includes("Invalid API key")) {
          throw new Error("Invalid API Key. Please check your configuration.");
       }
       throw new Error(`Failed to generate image: ${error.message}`);
